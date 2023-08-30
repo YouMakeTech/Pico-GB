@@ -1,0 +1,14 @@
+as docker was the easiest way to make a reproducible environment to build this, here is a Dockerfile!
+
+
+// build the image
+docker build -t picobuild:latest .
+
+// mount the workspace and run cmake in the build folder
+docker run -v $(pwd):/work/pico-gb docker.io/library/picobuild:latest
+
+// mount workspace and start the interactive bash ...
+docker run -v $(pwd):/work/pico-gb --entrypoint /bin/bash -it docker.io/library/picobuild:latest	
+
+// to run in the make command and build everything
+PICO_SDK_PATH=/work/pico-sdk make
