@@ -46,7 +46,6 @@
 #include <hardware/dma.h>
 #include <hardware/spi.h>
 #include <hardware/sync.h>
-#include <hardware/flash.h>
 #include <hardware/timer.h>
 #include <hardware/vreg.h>
 #include <pico/bootrom.h>
@@ -55,6 +54,8 @@
 #include <pico/multicore.h>
 #include <sys/unistd.h>
 #include <hardware/irq.h>
+#include <hardware/flash.h>
+#include <hardware/adc.h>
 
 /* Project headers */
 #include "hedley.h"
@@ -74,6 +75,7 @@
 #define GPIO_B		7
 #define GPIO_SELECT	8
 #define GPIO_START	9
+#define GPIO_MENU	16
 #define GPIO_CS		17
 #define GPIO_CLK	18
 #define GPIO_SDA	19
@@ -117,6 +119,9 @@ static struct
 	unsigned up	: 1;
 	unsigned down	: 1;
 } prev_joypad_bits;
+
+unsigned prev_to_menu=1;
+unsigned to_menu=1;
 
 /* Multicore command structure. */
 union core_cmd {
@@ -590,6 +595,7 @@ int main(void)
 	gpio_set_function(GPIO_B, GPIO_FUNC_SIO);
 	gpio_set_function(GPIO_SELECT, GPIO_FUNC_SIO);
 	gpio_set_function(GPIO_START, GPIO_FUNC_SIO);
+	gpio_set_function(GPIO_MENU, GPIO_FUNC_SIO);
 	gpio_set_function(GPIO_CS, GPIO_FUNC_SIO);
 	gpio_set_function(GPIO_CLK, GPIO_FUNC_SPI);
 	gpio_set_function(GPIO_SDA, GPIO_FUNC_SPI);
@@ -605,6 +611,7 @@ int main(void)
 	gpio_set_dir(GPIO_B, false);
 	gpio_set_dir(GPIO_SELECT, false);
 	gpio_set_dir(GPIO_START, false);
+	gpio_set_dir(GPIO_MENU, false);
 	gpio_set_dir(GPIO_CS, true);
 	gpio_set_dir(GPIO_RS, true);
 	gpio_set_dir(GPIO_RST, true);
@@ -620,6 +627,7 @@ int main(void)
 	gpio_pull_up(GPIO_B);
 	gpio_pull_up(GPIO_SELECT);
 	gpio_pull_up(GPIO_START);
+	gpio_pull_up(GPIO_MENU);
 
 	/* Set SPI clock to use high frequency. */
 	clock_configure(clk_peri, 0,
@@ -638,7 +646,7 @@ int main(void)
 	i2s_config_t i2s_config = i2s_get_default_config();
 	i2s_config.sample_freq=AUDIO_SAMPLE_RATE;
 	i2s_config.dma_trans_count =AUDIO_SAMPLES;
-	i2s_volume(&i2s_config,2);
+	i2s_volume(&i2s_config, 1); // TODO cdreier: test lower initial volume
 	i2s_init(&i2s_config);
 #endif
 
@@ -714,6 +722,7 @@ while(true)
 #endif
 
 		/* Update buttons state */
+		prev_to_menu=to_menu;
 		prev_joypad_bits.up=gb.direct.joypad_bits.up;
 		prev_joypad_bits.down=gb.direct.joypad_bits.down;
 		prev_joypad_bits.left=gb.direct.joypad_bits.left;
@@ -730,9 +739,10 @@ while(true)
 		gb.direct.joypad_bits.b=gpio_get(GPIO_B);
 		gb.direct.joypad_bits.select=gpio_get(GPIO_SELECT);
 		gb.direct.joypad_bits.start=gpio_get(GPIO_START);
+		to_menu=gpio_get(GPIO_MENU);
 
-		/* hotkeys (select + * combo)*/
-		if(!gb.direct.joypad_bits.select) {
+		/* hotkeys (menu button + * combo)*/
+		if(!to_menu) {
 #if ENABLE_SOUND
 			if(!gb.direct.joypad_bits.up && prev_joypad_bits.up) {
 				/* select + up: increase sound volume */
@@ -757,7 +767,9 @@ while(true)
 					manual_assign_palette(palette,manual_palette_selected);
 				}
 			}
-			if(!gb.direct.joypad_bits.start && prev_joypad_bits.start) {
+			
+			// this is now select + menu button 
+			if(!gb.direct.joypad_bits.select && prev_joypad_bits.select) {
 				/* select + start: save ram and resets to the game selection menu */
 #if ENABLE_SDCARD				
 				write_cart_ram_file(&gb);

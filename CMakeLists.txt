@@ -24,7 +24,7 @@ target_include_directories(RP2040_GB PRIVATE inc ext/minigb_apu ext/i2s)
 target_link_libraries(RP2040_GB
         FatFs_SPI
         pico_stdlib pico_stdio pico_bootrom pico_multicore pico_stdio  pico_multicore
-        hardware_clocks hardware_pio hardware_vreg hardware_pio hardware_flash
+        hardware_clocks hardware_pio hardware_vreg hardware_pio hardware_flash hardware_adc
         hardware_sync hardware_pll hardware_spi hardware_irq hardware_dma
         pico_binary_info)
 target_compile_definitions(RP2040_GB PRIVATE
