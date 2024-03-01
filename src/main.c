@@ -17,6 +17,8 @@
 #define ENABLE_LCD	1
 #define ENABLE_SOUND	1
 #define ENABLE_SDCARD	1
+#define ENABLE_SERIAL_MONITOR	0
+#define ENABLE_LINK_CABLE 1
 #define PEANUT_GB_HIGH_LCD_ACCURACY 1
 #define PEANUT_GB_USE_BIOS 0
 
@@ -64,6 +66,7 @@
 #include "sdcard.h"
 #include "i2s.h"
 #include "gbcolors.h"
+#include "linkcable.h"
 
 /* GPIO Connections. */
 #define GPIO_UP		2
@@ -140,6 +143,9 @@ union core_cmd {
 /* Pixel data is stored in here. */
 static uint8_t pixels_buffer[LCD_WIDTH];
 
+static struct gb_s __uninitialized_ram(gGameBoy);
+
+
 #define putstdio(x) write(1, x, strlen(x))
 
 /* Functions required for communication with the ILI9225. */
@@ -215,7 +221,9 @@ void gb_error(struct gb_s *gb, const enum gb_error_e gb_err, const uint16_t addr
 			"INVALID READ",
 			"INVALID WRITE"
 		};
+#if ENABLE_SERIAL_MONITOR
 	printf("Error %d occurred: %s at %04X\n.\n", gb_err, gb_err_str[gb_err], addr);
+#endif //ENABLE_SERIAL_MONITOR
 //	abort();
 #endif
 }
@@ -313,7 +321,9 @@ void read_cart_ram_file(struct gb_s *gb) {
 		sd_card_t *pSD=sd_get_by_num(0);
 		FRESULT fr=f_mount(&pSD->fatfs,pSD->pcName,1);
 		if (FR_OK!=fr) {
+#if ENABLE_SERIAL_MONITOR
 			printf("E f_mount error: %s (%d)\n",FRESULT_str(fr),fr);
+#endif //ENABLE_SERIAL_MONITOR
 			return;
 		}
 
@@ -322,16 +332,22 @@ void read_cart_ram_file(struct gb_s *gb) {
 		if (fr==FR_OK) {
 			f_read(&fil,ram,f_size(&fil),&br);
 		} else {
+#if ENABLE_SERIAL_MONITOR
 			printf("E f_open(%s) error: %s (%d)\n",filename,FRESULT_str(fr),fr);
+#endif //ENABLE_SERIAL_MONITOR
 		}
 		
 		fr=f_close(&fil);
 		if(fr!=FR_OK) {
+#if ENABLE_SERIAL_MONITOR
 			printf("E f_close error: %s (%d)\n", FRESULT_str(fr), fr);
+#endif //ENABLE_SERIAL_MONITOR
 		}
 		f_unmount(pSD->pcName);
 	}
+#if ENABLE_SERIAL_MONITOR
 	printf("I read_cart_ram_file(%s) COMPLETE (%lu bytes)\n",filename,save_size);
+#endif //ENABLE_SERIAL_MONITOR
 }
 
 /**
@@ -348,7 +364,9 @@ void write_cart_ram_file(struct gb_s *gb) {
 		sd_card_t *pSD=sd_get_by_num(0);
 		FRESULT fr=f_mount(&pSD->fatfs,pSD->pcName,1);
 		if (FR_OK!=fr) {
+#if ENABLE_SERIAL_MONITOR
 			printf("E f_mount error: %s (%d)\n",FRESULT_str(fr),fr);
+#endif //ENABLE_SERIAL_MONITOR
 			return;
 		}
 
@@ -357,16 +375,22 @@ void write_cart_ram_file(struct gb_s *gb) {
 		if (fr==FR_OK) {
 			f_write(&fil,ram,save_size,&bw);
 		} else {
+#if ENABLE_SERIAL_MONITOR
 			printf("E f_open(%s) error: %s (%d)\n",filename,FRESULT_str(fr),fr);
+#endif //ENABLE_SERIAL_MONITOR
 		}
 		
 		fr=f_close(&fil);
 		if(fr!=FR_OK) {
+#if ENABLE_SERIAL_MONITOR
 			printf("E f_close error: %s (%d)\n", FRESULT_str(fr), fr);
+#endif //ENABLE_SERIAL_MONITOR
 		}
 		f_unmount(pSD->pcName);
 	}
+#if ENABLE_SERIAL_MONITOR
 	printf("I write_cart_ram_file(%s) COMPLETE (%lu bytes)\n",filename,save_size);
+#endif //ENABLE_SERIAL_MONITOR
 }
 
 /**
@@ -379,7 +403,9 @@ void load_cart_rom_file(char *filename) {
 	sd_card_t *pSD=sd_get_by_num(0);
 	FRESULT fr=f_mount(&pSD->fatfs,pSD->pcName,1);
 	if (FR_OK!=fr) {
+#if ENABLE_SERIAL_MONITOR
 		printf("E f_mount error: %s (%d)\n",FRESULT_str(fr),fr);
+#endif //ENABLE_SERIAL_MONITOR
 		return;
 	}
 	FIL fil;
@@ -390,13 +416,19 @@ void load_cart_rom_file(char *filename) {
 			f_read(&fil,buffer,sizeof buffer,&br);
 			if(br==0) break; /* end of file */
 
+#if ENABLE_SERIAL_MONITOR
 			printf("I Erasing target region...\n");
+#endif //ENABLE_SERIAL_MONITOR
 			flash_range_erase(flash_target_offset,FLASH_SECTOR_SIZE);
+#if ENABLE_SERIAL_MONITOR
 			printf("I Programming target region...\n");
+#endif //ENABLE_SERIAL_MONITOR
 			flash_range_program(flash_target_offset,buffer,FLASH_SECTOR_SIZE);
 			
 			/* Read back target region and check programming */
+#if ENABLE_SERIAL_MONITOR
 			printf("I Done. Reading back target region...\n");
+#endif //ENABLE_SERIAL_MONITOR
 			for(uint32_t i=0;i<FLASH_SECTOR_SIZE;i++) {
 				if(rom[flash_target_offset+i]!=buffer[i]) {
 					mismatch=true;
@@ -407,21 +439,31 @@ void load_cart_rom_file(char *filename) {
 			flash_target_offset+=FLASH_SECTOR_SIZE;
 		}
 		if(mismatch) {
+#if ENABLE_SERIAL_MONITOR
 	        printf("I Programming successful!\n");
+#endif //ENABLE_SERIAL_MONITOR
 		} else {
+#if ENABLE_SERIAL_MONITOR
 			printf("E Programming failed!\n");
+#endif //ENABLE_SERIAL_MONITOR
 		}
 	} else {
-		printf("E f_open(%s) error: %s (%d)\n",filename,FRESULT_str(fr),fr);
+#if ENABLE_SERIAL_MONITOR
+        printf("E f_open(%s) error: %s (%d)\n",filename,FRESULT_str(fr),fr);
+#endif //ENABLE_SERIAL_MONITOR
 	}
 	
 	fr=f_close(&fil);
 	if(fr!=FR_OK) {
+#if ENABLE_SERIAL_MONITOR
 		printf("E f_close error: %s (%d)\n", FRESULT_str(fr), fr);
+#endif //ENABLE_SERIAL_MONITOR
 	}
 	f_unmount(pSD->pcName);
 
+#if ENABLE_SERIAL_MONITOR
 	printf("I load_cart_rom_file(%s) COMPLETE (%lu bytes)\n",filename,br);
+#endif //ENABLE_SERIAL_MONITOR
 }
 
 /**
@@ -435,7 +477,9 @@ uint16_t rom_file_selector_display_page(char filename[22][256],uint16_t num_page
 
     fr=f_mount(&pSD->fatfs,pSD->pcName,1);
     if (FR_OK!=fr) {
+#if ENABLE_SERIAL_MONITOR
         printf("E f_mount error: %s (%d)\n",FRESULT_str(fr),fr);
+#endif //ENABLE_SERIAL_MONITOR
         return 0;
     }
 
@@ -559,9 +603,19 @@ void rom_file_selector() {
 
 #endif
 
+#if ENABLE_LINK_CABLE
+void __not_in_flash_func(linkcable_interrupt_handler)(void){
+    uint8_t r = linkcable_receive();
+    gGameBoy.hram_io[IO_SB] = r;
+    gGameBoy.hram_io[IO_SC] &= 0x7F;
+    gGameBoy.hram_io[IO_IF] |= SERIAL_INTR;
+    linkcable_isr_clear();
+    if (gLinkcable_isSlave) linkcable_start(r);
+}
+#endif
+
 int main(void)
 {
-	static struct gb_s gb;
 	enum gb_init_error_e ret;
 	
 	/* Overclock. */
@@ -579,7 +633,13 @@ int main(void)
 	stdio_init_all();
 	time_init();
 	// sleep_ms(5000);
+#if ENABLE_SERIAL_MONITOR
 	putstdio("INIT: ");
+#endif //ENABLE_SERIAL_MONITOR
+
+#if ENABLE_LINK_CABLE
+    linkcable_init(linkcable_interrupt_handler);
+#endif //ENABLE_LINK_CABLE
 
 	/* Initialise GPIO pins. */
 	gpio_set_function(GPIO_UP, GPIO_FUNC_SIO);
@@ -655,122 +715,138 @@ while(true)
 
 	/* Initialise GB context. */
 	memcpy(rom_bank0, rom, sizeof(rom_bank0));
-	ret = gb_init(&gb, &gb_rom_read, &gb_cart_ram_read,
+	ret = gb_init(&gGameBoy, &gb_rom_read, &gb_cart_ram_read,
 		      &gb_cart_ram_write, &gb_error, NULL);
+#if ENABLE_SERIAL_MONITOR
 	putstdio("GB ");
+#endif //ENABLE_SERIAL_MONITOR
 
 	if(ret != GB_INIT_NO_ERROR)
 	{
+#if ENABLE_SERIAL_MONITOR
 		printf("Error: %d\n", ret);
+#endif //ENABLE_SERIAL_MONITOR
 		goto out;
 	}
 
 	/* Automatically assign a colour palette to the game */
 	char rom_title[16];
-	auto_assign_palette(palette, gb_colour_hash(&gb),gb_get_rom_name(&gb,rom_title));
+	auto_assign_palette(palette, gb_colour_hash(&gGameBoy),gb_get_rom_name(&gGameBoy,rom_title));
 	
 #if ENABLE_LCD
-	gb_init_lcd(&gb, &lcd_draw_line);
+	gb_init_lcd(&gGameBoy, &lcd_draw_line);
 
 	/* Start Core1, which processes requests to the LCD. */
+#   if ENABLE_SERIAL_MONITOR
 	putstdio("CORE1 ");
+#   endif //ENABLE_SERIAL_MONITOR
 	multicore_launch_core1(main_core1);
 	
+#   if ENABLE_SERIAL_MONITOR
 	putstdio("LCD ");
+#   endif //ENABLE_SERIAL_MONITOR
 #endif
 
 #if ENABLE_SOUND
 	// Initialize audio emulation
 	audio_init();
 	
+#   if ENABLE_SERIAL_MONITOR
 	putstdio("AUDIO ");
+#   endif //ENABLE_SERIAL_MONITOR
 #endif
 
 #if ENABLE_SDCARD
 	/* Load Save File. */
-	read_cart_ram_file(&gb);
+	read_cart_ram_file(&gGameBoy);
 #endif
 
+#if ENABLE_SERIAL_MONITOR
 	putstdio("\n> ");
+#endif //ENABLE_SERIAL_MONITOR
 	uint_fast32_t frames = 0;
 	uint64_t start_time = time_us_64();
 	while(1)
 	{
 		int input;
 
-		gb.gb_frame = 0;
+		gGameBoy.gb_frame = 0;
 
 		do {
-			__gb_step_cpu(&gb);
+			__gb_step_cpu(&gGameBoy);
 			tight_loop_contents();
-		} while(HEDLEY_LIKELY(gb.gb_frame == 0));
+		} while(HEDLEY_LIKELY(gGameBoy.gb_frame == 0));
 
 		frames++;
 #if ENABLE_SOUND
-		if(!gb.direct.frame_skip) {
+		if(!gGameBoy.direct.frame_skip) {
 			audio_callback(NULL, stream, AUDIO_BUFFER_SIZE_BYTES);
 			i2s_dma_write(&i2s_config, stream);
 		}
 #endif
 
 		/* Update buttons state */
-		prev_joypad_bits.up=gb.direct.joypad_bits.up;
-		prev_joypad_bits.down=gb.direct.joypad_bits.down;
-		prev_joypad_bits.left=gb.direct.joypad_bits.left;
-		prev_joypad_bits.right=gb.direct.joypad_bits.right;
-		prev_joypad_bits.a=gb.direct.joypad_bits.a;
-		prev_joypad_bits.b=gb.direct.joypad_bits.b;
-		prev_joypad_bits.select=gb.direct.joypad_bits.select;
-		prev_joypad_bits.start=gb.direct.joypad_bits.start;
-		gb.direct.joypad_bits.up=gpio_get(GPIO_UP);
-		gb.direct.joypad_bits.down=gpio_get(GPIO_DOWN);
-		gb.direct.joypad_bits.left=gpio_get(GPIO_LEFT);
-		gb.direct.joypad_bits.right=gpio_get(GPIO_RIGHT);
-		gb.direct.joypad_bits.a=gpio_get(GPIO_A);
-		gb.direct.joypad_bits.b=gpio_get(GPIO_B);
-		gb.direct.joypad_bits.select=gpio_get(GPIO_SELECT);
-		gb.direct.joypad_bits.start=gpio_get(GPIO_START);
+		prev_joypad_bits.up=gGameBoy.direct.joypad_bits.up;
+		prev_joypad_bits.down=gGameBoy.direct.joypad_bits.down;
+		prev_joypad_bits.left=gGameBoy.direct.joypad_bits.left;
+		prev_joypad_bits.right=gGameBoy.direct.joypad_bits.right;
+		prev_joypad_bits.a=gGameBoy.direct.joypad_bits.a;
+		prev_joypad_bits.b=gGameBoy.direct.joypad_bits.b;
+		prev_joypad_bits.select=gGameBoy.direct.joypad_bits.select;
+		prev_joypad_bits.start=gGameBoy.direct.joypad_bits.start;
+		gGameBoy.direct.joypad_bits.up=gpio_get(GPIO_UP);
+		gGameBoy.direct.joypad_bits.down=gpio_get(GPIO_DOWN);
+		gGameBoy.direct.joypad_bits.left=gpio_get(GPIO_LEFT);
+		gGameBoy.direct.joypad_bits.right=gpio_get(GPIO_RIGHT);
+		gGameBoy.direct.joypad_bits.a=gpio_get(GPIO_A);
+		gGameBoy.direct.joypad_bits.b=gpio_get(GPIO_B);
+		gGameBoy.direct.joypad_bits.select=gpio_get(GPIO_SELECT);
+		gGameBoy.direct.joypad_bits.start=gpio_get(GPIO_START);
 
 		/* hotkeys (select + * combo)*/
-		if(!gb.direct.joypad_bits.select) {
+		if(!gGameBoy.direct.joypad_bits.select) {
 #if ENABLE_SOUND
-			if(!gb.direct.joypad_bits.up && prev_joypad_bits.up) {
+			if(!gGameBoy.direct.joypad_bits.up && prev_joypad_bits.up) {
 				/* select + up: increase sound volume */
 				i2s_increase_volume(&i2s_config);
 			}
-			if(!gb.direct.joypad_bits.down && prev_joypad_bits.down) {
+			if(!gGameBoy.direct.joypad_bits.down && prev_joypad_bits.down) {
 				/* select + down: decrease sound volume */
 				i2s_decrease_volume(&i2s_config);
 			}
 #endif
-			if(!gb.direct.joypad_bits.right && prev_joypad_bits.right) {
+			if(!gGameBoy.direct.joypad_bits.right && prev_joypad_bits.right) {
 				/* select + right: select the next manual color palette */
 				if(manual_palette_selected<12) {
 					manual_palette_selected++;
 					manual_assign_palette(palette,manual_palette_selected);
 				}	
 			}
-			if(!gb.direct.joypad_bits.left && prev_joypad_bits.left) {
+			if(!gGameBoy.direct.joypad_bits.left && prev_joypad_bits.left) {
 				/* select + left: select the previous manual color palette */
 				if(manual_palette_selected>0) {
 					manual_palette_selected--;
 					manual_assign_palette(palette,manual_palette_selected);
 				}
 			}
-			if(!gb.direct.joypad_bits.start && prev_joypad_bits.start) {
+			if(!gGameBoy.direct.joypad_bits.start && prev_joypad_bits.start) {
 				/* select + start: save ram and resets to the game selection menu */
+                linkcable_shutdown();
 #if ENABLE_SDCARD				
-				write_cart_ram_file(&gb);
+				write_cart_ram_file(&gGameBoy);
 #endif				
 				goto out;
 			}
-			if(!gb.direct.joypad_bits.a && prev_joypad_bits.a) {
+			if(!gGameBoy.direct.joypad_bits.a && prev_joypad_bits.a) {
 				/* select + A: enable/disable frame-skip => fast-forward */
-				gb.direct.frame_skip=!gb.direct.frame_skip;
-				printf("I gb.direct.frame_skip = %d\n",gb.direct.frame_skip);
+				gGameBoy.direct.frame_skip=!gGameBoy.direct.frame_skip;
+#if ENABLE_SERIAL_MONITOR
+				printf("I gGameBoy.direct.frame_skip = %d\n",gGameBoy.direct.frame_skip);
+#endif //ENABLE_SERIAL_MONITOR
 			}
 		}
 
+#if ENABLE_SERIAL_MONITOR
 		/* Serial monitor commands */ 
 		input = getchar_timeout_us(0);
 		if(input == PICO_ERROR_TIMEOUT)
@@ -809,11 +885,11 @@ while(true)
 		}
 
 		case 'i':
-			gb.direct.interlace = !gb.direct.interlace;
+			gGameBoy.direct.interlace = !gGameBoy.direct.interlace;
 			break;
 
 		case 'f':
-			gb.direct.frame_skip = !gb.direct.frame_skip;
+			gGameBoy.direct.frame_skip = !gGameBoy.direct.frame_skip;
 			break;
 
 		case 'b':
@@ -838,50 +914,50 @@ while(true)
 		case '\n':
 		case '\r':
 		{
-			gb.direct.joypad_bits.start = 0;
+			gGameBoy.direct.joypad_bits.start = 0;
 			break;
 		}
 
 		case '\b':
 		{
-			gb.direct.joypad_bits.select = 0;
+			gGameBoy.direct.joypad_bits.select = 0;
 			break;
 		}
 
 		case '8':
 		{
-			gb.direct.joypad_bits.up = 0;
+			gGameBoy.direct.joypad_bits.up = 0;
 			break;
 		}
 
 		case '2':
 		{
-			gb.direct.joypad_bits.down = 0;
+			gGameBoy.direct.joypad_bits.down = 0;
 			break;
 		}
 
 		case '4':
 		{
-			gb.direct.joypad_bits.left= 0;
+			gGameBoy.direct.joypad_bits.left= 0;
 			break;
 		}
 
 		case '6':
 		{
-			gb.direct.joypad_bits.right = 0;
+			gGameBoy.direct.joypad_bits.right = 0;
 			break;
 		}
 
 		case 'z':
 		case 'w':
 		{
-			gb.direct.joypad_bits.a = 0;
+			gGameBoy.direct.joypad_bits.a = 0;
 			break;
 		}
 
 		case 'x':
 		{
-			gb.direct.joypad_bits.b = 0;
+			gGameBoy.direct.joypad_bits.b = 0;
 			break;
 		}
 
@@ -891,12 +967,14 @@ while(true)
 		default:
 			break;
 		}
+#endif //ENABLE_SERIAL_MONITOR
 	}
 out:
+#if ENABLE_SERIAL_MONITOR
 	puts("\nEmulation Ended");
+#endif //ENABLE_SERIAL_MONITOR
 	/* stop lcd task running on core 1 */
 	multicore_reset_core1(); 
-
 }
 
 }

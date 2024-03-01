@@ -12,6 +12,7 @@ add_subdirectory(ext/FatFs_SPI build)
 
 add_executable(RP2040_GB
         src/main.c
+        src/linkcable.c
         src/mk_ili9225.c
         ext/minigb_apu/minigb_apu.c
         ext/i2s/i2s.c
@@ -25,7 +26,7 @@ target_link_libraries(RP2040_GB
         FatFs_SPI
         pico_stdlib pico_stdio pico_bootrom pico_multicore pico_stdio  pico_multicore
         hardware_clocks hardware_pio hardware_vreg hardware_pio
-        hardware_sync hardware_pll hardware_spi hardware_irq hardware_dma
+        hardware_sync hardware_pll hardware_spi hardware_irq hardware_dma hardware_flash
         pico_binary_info)
 target_compile_definitions(RP2040_GB PRIVATE
         PARAM_ASSERTIONS_DISABLE_ALL=1
@@ -44,9 +45,12 @@ function(pico_add_verbose_dis_output TARGET)
 		)
 endfunction()
 
+pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/src/linkcable_master.pio)
+pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/src/linkcable_slave.pio)
+
 pico_set_binary_type(RP2040_GB copy_to_ram)
 #pico_set_binary_type(RP2040_GB no_flash)
-pico_enable_stdio_usb(RP2040_GB 1)
+pico_enable_stdio_usb(RP2040_GB 0)
 pico_enable_stdio_uart(RP2040_GB 0)
 pico_add_verbose_dis_output(RP2040_GB)
 pico_add_bin_output(RP2040_GB)
