@@ -1,0 +1,49 @@
+; Program name
+.program linkcable_slave
+
+.wrap_target
+    set X, 7
+    wait 0 gpio 10 ; FIXUP GPIO PIN_SCK HERE
+    pull noblock
+    out null, 24
+    out pins, 1 [19]
+    jmp loop_start
+bitloop:
+    nop [19]
+    wait 0 gpio 10 ; FIXUP GPIO PIN_SCK HERE
+    out pins, 1 [19]
+loop_start:
+    wait 1 gpio 10 [19] ; FIXUP GPIO PIN_SCK HERE
+    in pins, 1
+    jmp x-- bitloop
+    push noblock
+    irq 0
+.wrap
+
+% c-sdk {
+#define PIN_SCK             10
+#define PIN_SIN             16
+#define PIN_SOUT            11
+
+static inline void linkcable_slave_program_init(PIO pio, uint sm, uint offset) {
+    pio_sm_config c = linkcable_slave_program_get_default_config(offset);
+
+    pio_sm_set_consecutive_pindirs(pio, sm, PIN_SCK, 1, false);
+
+    sm_config_set_in_pins(&c, PIN_SIN);
+    pio_sm_set_consecutive_pindirs(pio, sm, PIN_SIN, 1, false);
+    sm_config_set_in_shift(&c, false, false, 8);
+
+    sm_config_set_out_pins(&c, PIN_SOUT, 1);
+    pio_sm_set_consecutive_pindirs(pio, sm, PIN_SOUT, 1, true);
+    sm_config_set_out_shift(&c, false, false, 8);
+
+    sm_config_set_clkdiv(&c, 300);
+
+    pio_gpio_init(pio, PIN_SCK);
+    pio_gpio_init(pio, PIN_SIN);
+    pio_gpio_init(pio, PIN_SOUT);
+
+    pio_sm_init(pio, sm, offset, &c);
+}
+%}

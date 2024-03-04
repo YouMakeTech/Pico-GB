@@ -45,6 +45,7 @@
 #include <stdint.h>	/* Required for int types */
 #include <string.h>	/* Required for memset */
 #include <time.h>	/* Required for tm struct */
+#include "linkcable.h"
 
 /**
 * If PEANUT_GB_IS_LITTLE_ENDIAN is positive, then Peanut-GB will be configured
@@ -427,7 +428,6 @@ struct count_s
 	uint_fast16_t lcd_count;	/* LCD Timing */
 	uint_fast16_t div_count;	/* Divider Register Counter */
 	uint_fast16_t tima_count;	/* Timer Counter */
-	uint_fast16_t serial_count;	/* Serial Counter */
 };
 
 #if ENABLE_LCD
@@ -474,15 +474,6 @@ enum gb_init_error_e
 };
 
 /**
- * Return codes for serial receive function, mainly for clarity.
- */
-enum gb_serial_rx_ret_e
-{
-	GB_SERIAL_RX_SUCCESS = 0,
-	GB_SERIAL_RX_NO_CONNECTION = 1
-};
-
-/**
  * Emulator context.
  *
  * Only values within the `direct` struct may be modified directly by the
@@ -526,10 +517,6 @@ struct gb_s
 	 * \param addr			address of where error occurred
 	 */
 	void (*gb_error)(struct gb_s*, const enum gb_error_e, const uint16_t addr);
-
-	/* Transmit one byte and return the received byte. */
-	void (*gb_serial_tx)(struct gb_s*, const uint8_t tx);
-	enum gb_serial_rx_ret_e (*gb_serial_rx)(struct gb_s*, uint8_t* rx);
 
 	/* Read byte from boot ROM at given address. */
 	uint8_t (*gb_bootrom_read)(struct gb_s*, const uint_fast16_t addr);
@@ -984,10 +971,13 @@ void __gb_write(struct gb_s *gb, uint_fast16_t addr, uint8_t val)
 		/* Serial */
 		case 0x01:
 			gb->hram_io[IO_SB] = val;
+            if (gLinkcable_isSlave) linkcable_start(val);
 			return;
 
 		case 0x02:
-			gb->hram_io[IO_SC] = val;
+ 			gb->hram_io[IO_SC] = val;
+            linkcable_set_slave((val & 1) ^ 1);
+            if ((val & 0x81) == 0x81) linkcable_start(gb->hram_io[IO_SB]);
 			return;
 
 		/* Timer Registers */
@@ -2383,15 +2373,6 @@ void __gb_step_cpu(struct gb_s *gb)
 			PGB_UNREACHABLE();
 		}
 
-		if(gb->hram_io[IO_SC] & SERIAL_SC_TX_START)
-		{
-			int serial_cycles = SERIAL_CYCLES -
-				gb->counter.serial_count;
-
-			if(serial_cycles < halt_cycles)
-				halt_cycles = serial_cycles;
-		}
-
 		if(gb->hram_io[IO_TAC] & IO_TAC_ENABLE_MASK)
 		{
 			int tac_cycles = TAC_CYCLES[gb->hram_io[IO_TAC] & IO_TAC_RATE_MASK] -
@@ -3202,56 +3183,6 @@ void __gb_step_cpu(struct gb_s *gb)
 			gb->counter.div_count -= DIV_CYCLES;
 		}
 
-		/* Check serial transmission. */
-		if(gb->hram_io[IO_SC] & SERIAL_SC_TX_START)
-		{
-			/* If new transfer, call TX function. */
-			if(gb->counter.serial_count == 0 &&
-				gb->gb_serial_tx != NULL)
-				(gb->gb_serial_tx)(gb, gb->hram_io[IO_SB]);
-
-			gb->counter.serial_count += inst_cycles;
-
-			/* If it's time to receive byte, call RX function. */
-			if(gb->counter.serial_count >= SERIAL_CYCLES)
-			{
-				/* If RX can be done, do it. */
-				/* If RX failed, do not change SB if using external
-				 * clock, or set to 0xFF if using internal clock. */
-				uint8_t rx;
-
-				if(gb->gb_serial_rx != NULL &&
-					(gb->gb_serial_rx(gb, &rx) ==
-						GB_SERIAL_RX_SUCCESS))
-				{
-					gb->hram_io[IO_SB] = rx;
-
-					/* Inform game of serial TX/RX completion. */
-					gb->hram_io[IO_SC] &= 0x01;
-					gb->hram_io[IO_IF] |= SERIAL_INTR;
-				}
-				else if(gb->hram_io[IO_SC] & SERIAL_SC_CLOCK_SRC)
-				{
-					/* If using internal clock, and console is not
-					 * attached to any external peripheral, shifted
-					 * bits are replaced with logic 1. */
-					gb->hram_io[IO_SB] = 0xFF;
-
-					/* Inform game of serial TX/RX completion. */
-					gb->hram_io[IO_SC] &= 0x01;
-					gb->hram_io[IO_IF] |= SERIAL_INTR;
-				}
-				else
-				{
-					/* If using external clock, and console is not
-					 * attached to any external peripheral, bits are
-					 * not shifted, so SB is not modified. */
-				}
-
-				gb->counter.serial_count = 0;
-			}
-		}
-
 		/* TIMA register timing */
 		/* TODO: Change tac_enable to struct of TAC timer control bits. */
 		if(gb->hram_io[IO_TAC] & IO_TAC_ENABLE_MASK)
@@ -3413,15 +3344,6 @@ uint_fast32_t gb_get_save_size(struct gb_s *gb)
 	return ram_sizes[ram_size];
 }
 
-void gb_init_serial(struct gb_s *gb,
-		    void (*gb_serial_tx)(struct gb_s*, const uint8_t),
-		    enum gb_serial_rx_ret_e (*gb_serial_rx)(struct gb_s*,
-			    uint8_t*))
-{
-	gb->gb_serial_tx = gb_serial_tx;
-	gb->gb_serial_rx = gb_serial_rx;
-}
-
 uint8_t gb_colour_hash(struct gb_s *gb)
 {
 #define ROM_TITLE_START_ADDR	0x0134
@@ -3487,7 +3409,6 @@ void gb_reset(struct gb_s *gb)
 	gb->counter.lcd_count = 0;
 	gb->counter.div_count = 0;
 	gb->counter.tima_count = 0;
-	gb->counter.serial_count = 0;
 
 	gb->direct.joypad = 0xFF;
 	gb->hram_io[IO_JOYP] = 0xCF;
@@ -3555,12 +3476,6 @@ enum gb_init_error_e gb_init(struct gb_s *gb,
 	gb->gb_cart_ram_write = gb_cart_ram_write;
 	gb->gb_error = gb_error;
 	gb->direct.priv = priv;
-
-	/* Initialise serial transfer function to NULL. If the front-end does
-	 * not provide serial support, Peanut-GB will emulate no cable connected
-	 * automatically. */
-	gb->gb_serial_tx = NULL;
-	gb->gb_serial_rx = NULL;
 
 	gb->gb_bootrom_read = NULL;
 
@@ -3766,23 +3681,6 @@ void gb_init_lcd(struct gb_s *gb,
 			const uint8_t *pixels,
 			const uint_fast8_t line));
 #endif
-
-/**
- * Initialises the serial connection of the emulator. This function is optional,
- * and if not called, the emulator will assume that no link cable is connected
- * to the game.
- *
- * \param gb	An initialised emulator context. Must not be NULL.
- * \param gb_serial_tx Pointer to function that transmits a byte of data over
- *		the serial connection. Must not be NULL.
- * \param gb_serial_rx Pointer to function that receives a byte of data over the
- *		serial connection. If no byte is received,
- *		return GB_SERIAL_RX_NO_CONNECTION. Must not be NULL.
- */
-void gb_init_serial(struct gb_s *gb,
-		    void (*gb_serial_tx)(struct gb_s*, const uint8_t),
-		    enum gb_serial_rx_ret_e (*gb_serial_rx)(struct gb_s*,
-			    uint8_t*));
 
 /**
  * Obtains the save size of the game (size of the Cart RAM). Required by the
